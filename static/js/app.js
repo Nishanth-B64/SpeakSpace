@@ -594,8 +594,6 @@ async function initRoomPage() {
 
   // Initialize camera and join room
   try {
-    setCallStatus('Starting camera & audio…');
-    await getMedia();
     setCallStatus('Connecting to room…');
     const data = await api('/api/rooms/join', {
       method: 'POST',
@@ -606,14 +604,23 @@ async function initRoomPage() {
     if (state.partner && $('partnerLabel')) {
       $('partnerLabel').textContent = state.partner.name;
     }
-    setCallStatus(state.partner ? 'Connecting to partner…' : 'Waiting for more people (1/5)');
-    startPolling();
-    if (shouldCreateOffer()) await offerPeer();
-    showToast(`Joined room ${state.room}`, '🎉');
   } catch (err) {
     setCallStatus(`Error: ${err.message}`);
     showToast(err.message, '⚠️');
   }
+
+  // Device permissions should not prevent the peer from joining the room.
+  try {
+    setCallStatus(state.partner ? 'Starting camera & audio…' : 'Waiting for more people (1/5)');
+    await getMedia();
+  } catch (err) {
+    console.warn('Media setup failed:', err);
+    showToast('Joined without camera or microphone. Check browser permissions.', '⚠️');
+  }
+  setCallStatus(state.partner ? 'Connecting to partner…' : 'Waiting for more people (1/5)');
+  startPolling();
+  if (shouldCreateOffer()) await offerPeer();
+  showToast(`Joined room ${state.room}`, '🎉');
 
   // Camera & Mic toggles
   if ($('cameraBtn')) $('cameraBtn').addEventListener('click', toggleCamera);

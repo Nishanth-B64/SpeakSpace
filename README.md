@@ -13,7 +13,21 @@ A two-person English practice room: direct browser-to-browser video/audio throug
 
 Import the repository (or run `vercel` in the project), then set `GEMINI_API_KEY` and optionally `GEMINI_MODEL=gemini-3.6-flash` in **Project Settings → Environment Variables**. Redeploy after saving the variable. Do not upload `.env`.
 
-`vercel.json` runs the Flask app as a Python function. The bundled in-memory signaling is suitable for a demonstration or a single warm function instance. For production, replace the four `/api/rooms/*` handlers with a shared signaling service (such as Redis, Firebase, or Ably), because serverless instances do not share memory. WebRTC itself is peer-to-peer; add TURN credentials for users behind restrictive networks.
+`vercel.json` runs the Flask app as a Python function. Room signaling uses Firebase Realtime Database when `FIREBASE_DATABASE_URL` and `FIREBASE_SERVICE_ACCOUNT_JSON` are configured; otherwise it falls back to in-memory storage for local development. WebRTC itself is peer-to-peer; add TURN credentials for users behind restrictive networks.
+
+For Vercel, add these environment variables:
+- `FIREBASE_DATABASE_URL`: the Realtime Database URL from Firebase.
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: the complete service-account JSON on one line. Create it in **Firebase Console -> Project settings -> Service accounts -> Generate new private key**. Keep this value private.
+
+Set Realtime Database rules to deny direct unauthenticated client access because Flask uses the Admin SDK:
+```json
+{
+	"rules": {
+		".read": false,
+		".write": false
+	}
+}
+```
 
 ## Speech recognition
 

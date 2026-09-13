@@ -16,6 +16,8 @@ from collections import defaultdict
 from threading import Lock
 
 import speech_recognition as sr
+import firebase_admin
+from firebase_admin import credentials, db
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 
@@ -30,6 +32,19 @@ SIGNAL_TTL_SECONDS = 15 * 60
 MAX_ROOM_MEMBERS = 5
 _rooms: dict[str, dict[str, object]] = defaultdict(lambda: {"peers": {}, "signals": []})
 _rooms_lock = Lock()
+
+
+def firebase_database():
+    service_account = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+    database_url = os.getenv("FIREBASE_DATABASE_URL")
+    if not service_account or not database_url:
+        return None
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(
+            credentials.Certificate(json.loads(service_account)),
+            {"databaseURL": database_url},
+        )
+    return db.reference("rooms")
 
 TOPICS = [
     {"title": "Weekend plans", "prompt": "What would you like to do this weekend, and why?"},
@@ -106,10 +121,15 @@ def room_status_check():
     code = room_code(request.args.get("room", ""))
     if not code:
         return error("Room code required")
-    with _rooms_lock:
-        clean_expired_rooms()
-        room = _rooms.get(code)
-        count = len(room["peers"]) if room else 0
+    rooms_ref = firebase_database()
+    if rooms_ref:
+        room = rooms_ref.child(code).get() or {}
+        count = len(room.get("peers", {}))
+    else:
+        with _rooms_lock:
+            clean_expired_rooms()
+            room = _rooms.get(code)
+            count = len(room["peers"]) if room else 0
     return jsonify({"room": code, "peerCount": count, "maxMembers": MAX_ROOM_MEMBERS, "available": count < MAX_ROOM_MEMBERS})
 
 
@@ -121,13 +141,34 @@ def join_room():
     name = str(data.get("name", "Guest"))[:30].strip() or "Guest"
     if len(code) < 3 or not peer_id:
         return error("Enter a room code of at least 3 characters.")
-    with _rooms_lock:
-        clean_expired_rooms()
-        peers = _rooms[code]["peers"]
-        if peer_id not in peers and len(peers) >= MAX_ROOM_MEMBERS:
-            return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
-        peers[peer_id] = {"name": name, "seen": time.time()}
-        other_peers = [{"id": key, "name": value["name"]} for key, value in peers.items() if key != peer_id]
+    rooms_ref = firebase_database()
+    if rooms_ref:
+        room_ref = rooms_ref.child(code)
+
+        def update_room(room):
+            room = room or {"peers": {}, "signals": []}
+            peers = room.setdefault("peers", {})
+            if peer_id not in peers and len(peers) >= MAX_ROOM_MEMBERS:
+                raise ValueError("room-full")
+            peers[peer_id] = {"name": name, "seen": time.time()}
+            room.setdefault("signals", [])
+            return room
+
+        try:
+            room = room_ref.transaction(update_room) or {}
+        except ValueError as exc:
+            if str(exc) == "room-full":
+                return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
+            raise
+        peers = room.get("peers", {})
+    else:
+        with _rooms_lock:
+            clean_expired_rooms()
+            peers = _rooms[code]["peers"]
+            if peer_id not in peers and len(peers) >= MAX_ROOM_MEMBERS:
+                return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
+            peers[peer_id] = {"name": name, "seen": time.time()}
+    other_peers = [{"id": key, "name": value["name"]} for key, value in peers.items() if key != peer_id]
     return jsonify({"room": code, "peers": other_peers})
 
 
@@ -142,12 +183,31 @@ def send_signal():
         return error("Invalid signaling message.")
     if message.get("type") not in {"offer", "answer", "candidate"}:
         return error("Unsupported signaling message.")
-    with _rooms_lock:
-        room = _rooms.get(code)
-        if not room or sender not in room["peers"] or recipient not in room["peers"]:
-            return error("Join the room before signaling.", 404)
-        room["peers"][sender]["seen"] = time.time()
-        room["signals"].append({"id": uuid.uuid4().hex, "from": sender, "to": recipient, "message": message, "created": time.time()})
+    rooms_ref = firebase_database()
+    signal_item = {"id": uuid.uuid4().hex, "from": sender, "to": recipient, "message": message, "created": time.time()}
+    if rooms_ref:
+        room_ref = rooms_ref.child(code)
+
+        def add_signal(room):
+            if not room or sender not in room.get("peers", {}) or recipient not in room.get("peers", {}):
+                raise ValueError("room-missing")
+            room["peers"][sender]["seen"] = time.time()
+            room.setdefault("signals", []).append(signal_item)
+            return room
+
+        try:
+            room_ref.transaction(add_signal)
+        except ValueError as exc:
+            if str(exc) == "room-missing":
+                return error("Join the room before signaling.", 404)
+            raise
+    else:
+        with _rooms_lock:
+            room = _rooms.get(code)
+            if not room or sender not in room["peers"] or recipient not in room["peers"]:
+                return error("Join the room before signaling.", 404)
+            room["peers"][sender]["seen"] = time.time()
+            room["signals"].append(signal_item)
     return jsonify({"ok": True})
 
 
@@ -157,14 +217,37 @@ def poll_room():
     peer_id = request.args.get("peerId", "")[:80]
     if not code or not peer_id:
         return error("A room and peer ID are required.")
-    with _rooms_lock:
-        room = _rooms.get(code)
-        if not room or peer_id not in room["peers"]:
-            return error("Room session expired. Join again.", 404)
-        room["peers"][peer_id]["seen"] = time.time()
-        received = [item for item in room["signals"] if item["to"] == peer_id]
-        room["signals"] = [item for item in room["signals"] if item["to"] != peer_id]
-        peers = [{"id": key, "name": value["name"]} for key, value in room["peers"].items() if key != peer_id]
+    rooms_ref = firebase_database()
+    if rooms_ref:
+        room_ref = rooms_ref.child(code)
+        received_holder = []
+
+        def read_room(room):
+            if not room or peer_id not in room.get("peers", {}):
+                raise ValueError("room-missing")
+            room["peers"][peer_id]["seen"] = time.time()
+            received_holder[:] = [item for item in room.get("signals", []) if item.get("to") == peer_id]
+            room["signals"] = [item for item in room.get("signals", []) if item.get("to") != peer_id]
+            return room
+
+        try:
+            room = room_ref.transaction(read_room) or {}
+        except ValueError as exc:
+            if str(exc) == "room-missing":
+                return error("Room session expired. Join again.", 404)
+            raise
+        received = received_holder
+        peers_data = room.get("peers", {})
+        peers = [{"id": key, "name": value["name"]} for key, value in peers_data.items() if key != peer_id]
+    else:
+        with _rooms_lock:
+            room = _rooms.get(code)
+            if not room or peer_id not in room["peers"]:
+                return error("Room session expired. Join again.", 404)
+            room["peers"][peer_id]["seen"] = time.time()
+            received = [item for item in room["signals"] if item["to"] == peer_id]
+            room["signals"] = [item for item in room["signals"] if item["to"] != peer_id]
+            peers = [{"id": key, "name": value["name"]} for key, value in room["peers"].items() if key != peer_id]
     return jsonify({"signals": received, "peers": peers})
 
 
@@ -172,11 +255,23 @@ def poll_room():
 def leave_room():
     data = request.get_json(silent=True) or {}
     code, peer_id = room_code(str(data.get("room", ""))), str(data.get("peerId", ""))[:80]
-    with _rooms_lock:
-        room = _rooms.get(code)
-        if room:
-            room["peers"].pop(peer_id, None)
-            room["signals"] = [item for item in room["signals"] if item["from"] != peer_id and item["to"] != peer_id]
+    rooms_ref = firebase_database()
+    if rooms_ref:
+        room_ref = rooms_ref.child(code)
+
+        def remove_peer(room):
+            if room:
+                room.get("peers", {}).pop(peer_id, None)
+                room["signals"] = [item for item in room.get("signals", []) if item["from"] != peer_id and item["to"] != peer_id]
+            return room
+
+        room_ref.transaction(remove_peer)
+    else:
+        with _rooms_lock:
+            room = _rooms.get(code)
+            if room:
+                room["peers"].pop(peer_id, None)
+                room["signals"] = [item for item in room["signals"] if item["from"] != peer_id and item["to"] != peer_id]
     return jsonify({"ok": True})
 
 
