@@ -681,13 +681,13 @@ async function initRoomPage() {
 
   // Device permissions should not prevent the peer from joining the room.
   try {
-    setCallStatus(state.peers.size ? 'Starting camera & audio…' : 'Waiting for participants (1/5)');
+    setCallStatus(state.peers.size ? 'Starting camera & audio…' : 'Waiting for participant (1/2)');
     await getMedia();
   } catch (err) {
     console.warn('Media setup failed:', err);
     showToast('Joined without camera or microphone. Check browser permissions.', '⚠️');
   }
-  setCallStatus(state.peers.size ? 'Connecting to participants…' : 'Waiting for participants (1/5)');
+  setCallStatus(state.peers.size ? 'Connecting to participant…' : 'Waiting for participant (1/2)');
   startPolling();
   for (const peer of state.peers.values()) {
     makePeerConnection(peer)._peerId = peer.id;

@@ -28,7 +28,7 @@ app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB audio limit
 
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 SIGNAL_TTL_SECONDS = 15 * 60
-MAX_ROOM_MEMBERS = 5
+MAX_ROOM_MEMBERS = 2
 _rooms: dict[str, dict[str, object]] = defaultdict(lambda: {"peers": {}, "signals": []})
 _rooms_lock = Lock()
 _supabase: Client | None = None
