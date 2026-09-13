@@ -16,10 +16,9 @@ from collections import defaultdict
 from threading import Lock
 
 import speech_recognition as sr
-import firebase_admin
-from firebase_admin import credentials, db
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
+from supabase import Client, create_client
 
 ENV_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), ".env")
 load_dotenv(ENV_PATH, override=True)
@@ -32,19 +31,22 @@ SIGNAL_TTL_SECONDS = 15 * 60
 MAX_ROOM_MEMBERS = 5
 _rooms: dict[str, dict[str, object]] = defaultdict(lambda: {"peers": {}, "signals": []})
 _rooms_lock = Lock()
+_supabase: Client | None = None
 
 
-def firebase_database():
-    service_account = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
-    database_url = os.getenv("FIREBASE_DATABASE_URL")
-    if not service_account or not database_url:
+def supabase_client():
+    global _supabase
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
         return None
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(
-            credentials.Certificate(json.loads(service_account)),
-            {"databaseURL": database_url},
-        )
-    return db.reference("rooms")
+    if _supabase is None:
+        _supabase = create_client(url, key)
+    return _supabase
+
+
+def supabase_room_table(client):
+    return client.table(os.getenv("SUPABASE_ROOM_TABLE", "rooms"))
 
 TOPICS = [
     {"title": "Weekend plans", "prompt": "What would you like to do this weekend, and why?"},
@@ -121,10 +123,10 @@ def room_status_check():
     code = room_code(request.args.get("room", ""))
     if not code:
         return error("Room code required")
-    rooms_ref = firebase_database()
-    if rooms_ref:
-        room = rooms_ref.child(code).get() or {}
-        count = len(room.get("peers", {}))
+    client = supabase_client()
+    if client:
+        rows = supabase_room_table(client).select("peer_id,data").eq("room_code", code).execute().data or []
+        count = sum(1 for row in rows if row.get("data", {}).get("type") == "peer")
     else:
         with _rooms_lock:
             clean_expired_rooms()
@@ -141,26 +143,21 @@ def join_room():
     name = str(data.get("name", "Guest"))[:30].strip() or "Guest"
     if len(code) < 3 or not peer_id:
         return error("Enter a room code of at least 3 characters.")
-    rooms_ref = firebase_database()
-    if rooms_ref:
-        room_ref = rooms_ref.child(code)
-
-        def update_room(room):
-            room = room or {"peers": {}, "signals": []}
-            peers = room.setdefault("peers", {})
-            if peer_id not in peers and len(peers) >= MAX_ROOM_MEMBERS:
-                raise ValueError("room-full")
-            peers[peer_id] = {"name": name, "seen": time.time()}
-            room.setdefault("signals", [])
-            return room
-
-        try:
-            room = room_ref.transaction(update_room) or {}
-        except ValueError as exc:
-            if str(exc) == "room-full":
-                return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
-            raise
-        peers = room.get("peers", {})
+    client = supabase_client()
+    if client:
+        table = supabase_room_table(client)
+        rows = table.select("id,peer_id,data").eq("room_code", code).execute().data or []
+        peer_rows = [row for row in rows if row.get("data", {}).get("type") == "peer"]
+        existing = next((row for row in peer_rows if row["peer_id"] == peer_id), None)
+        if not existing and len(peer_rows) >= MAX_ROOM_MEMBERS:
+            return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
+        peer_data = {"type": "peer", "name": name, "seen": time.time()}
+        if existing:
+            table.update({"data": peer_data}).eq("id", existing["id"]).execute()
+        else:
+            table.insert({"room_code": code, "peer_id": peer_id, "data": peer_data}).execute()
+        peer_rows = table.select("peer_id,data").eq("room_code", code).execute().data or []
+        other_peers = [{"id": row["peer_id"], "name": row["data"].get("name", "Guest")} for row in peer_rows if row.get("data", {}).get("type") == "peer" and row["peer_id"] != peer_id]
     else:
         with _rooms_lock:
             clean_expired_rooms()
@@ -168,7 +165,7 @@ def join_room():
             if peer_id not in peers and len(peers) >= MAX_ROOM_MEMBERS:
                 return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
             peers[peer_id] = {"name": name, "seen": time.time()}
-    other_peers = [{"id": key, "name": value["name"]} for key, value in peers.items() if key != peer_id]
+        other_peers = [{"id": key, "name": value["name"]} for key, value in peers.items() if key != peer_id]
     return jsonify({"room": code, "peers": other_peers})
 
 
@@ -183,24 +180,15 @@ def send_signal():
         return error("Invalid signaling message.")
     if message.get("type") not in {"offer", "answer", "candidate"}:
         return error("Unsupported signaling message.")
-    rooms_ref = firebase_database()
     signal_item = {"id": uuid.uuid4().hex, "from": sender, "to": recipient, "message": message, "created": time.time()}
-    if rooms_ref:
-        room_ref = rooms_ref.child(code)
-
-        def add_signal(room):
-            if not room or sender not in room.get("peers", {}) or recipient not in room.get("peers", {}):
-                raise ValueError("room-missing")
-            room["peers"][sender]["seen"] = time.time()
-            room.setdefault("signals", []).append(signal_item)
-            return room
-
-        try:
-            room_ref.transaction(add_signal)
-        except ValueError as exc:
-            if str(exc) == "room-missing":
-                return error("Join the room before signaling.", 404)
-            raise
+    client = supabase_client()
+    if client:
+        table = supabase_room_table(client)
+        rows = table.select("peer_id,data").eq("room_code", code).execute().data or []
+        peers = {row["peer_id"] for row in rows if row.get("data", {}).get("type") == "peer"}
+        if sender not in peers or recipient not in peers:
+            return error("Join the room before signaling.", 404)
+        table.insert({"room_code": code, "peer_id": recipient, "data": {"type": "signal", "id": signal_item["id"], "from": sender, "to": recipient, "message": message, "created": signal_item["created"]}}).execute()
     else:
         with _rooms_lock:
             room = _rooms.get(code)
@@ -217,28 +205,21 @@ def poll_room():
     peer_id = request.args.get("peerId", "")[:80]
     if not code or not peer_id:
         return error("A room and peer ID are required.")
-    rooms_ref = firebase_database()
-    if rooms_ref:
-        room_ref = rooms_ref.child(code)
-        received_holder = []
-
-        def read_room(room):
-            if not room or peer_id not in room.get("peers", {}):
-                raise ValueError("room-missing")
-            room["peers"][peer_id]["seen"] = time.time()
-            received_holder[:] = [item for item in room.get("signals", []) if item.get("to") == peer_id]
-            room["signals"] = [item for item in room.get("signals", []) if item.get("to") != peer_id]
-            return room
-
-        try:
-            room = room_ref.transaction(read_room) or {}
-        except ValueError as exc:
-            if str(exc) == "room-missing":
-                return error("Room session expired. Join again.", 404)
-            raise
-        received = received_holder
-        peers_data = room.get("peers", {})
-        peers = [{"id": key, "name": value["name"]} for key, value in peers_data.items() if key != peer_id]
+    client = supabase_client()
+    if client:
+        table = supabase_room_table(client)
+        rows = table.select("id,peer_id,data").eq("room_code", code).execute().data or []
+        member = next((row for row in rows if row["peer_id"] == peer_id and row.get("data", {}).get("type") == "peer"), None)
+        if not member:
+            return error("Room session expired. Join again.", 404)
+        member["data"]["seen"] = time.time()
+        table.update({"data": member["data"]}).eq("id", member["id"]).execute()
+        signal_rows = [row for row in rows if row.get("data", {}).get("type") == "signal" and row.get("data", {}).get("to") == peer_id]
+        received = [row["data"] | {"id": row["data"].get("id", row["id"])} for row in signal_rows]
+        if signal_rows:
+            table.delete().in_("id", [row["id"] for row in signal_rows]).execute()
+        peers_data = [row for row in rows if row.get("data", {}).get("type") == "peer"]
+        peers = [{"id": row["peer_id"], "name": row["data"].get("name", "Guest")} for row in peers_data if row["peer_id"] != peer_id]
     else:
         with _rooms_lock:
             room = _rooms.get(code)
@@ -255,17 +236,13 @@ def poll_room():
 def leave_room():
     data = request.get_json(silent=True) or {}
     code, peer_id = room_code(str(data.get("room", ""))), str(data.get("peerId", ""))[:80]
-    rooms_ref = firebase_database()
-    if rooms_ref:
-        room_ref = rooms_ref.child(code)
-
-        def remove_peer(room):
-            if room:
-                room.get("peers", {}).pop(peer_id, None)
-                room["signals"] = [item for item in room.get("signals", []) if item["from"] != peer_id and item["to"] != peer_id]
-            return room
-
-        room_ref.transaction(remove_peer)
+    client = supabase_client()
+    if client:
+        table = supabase_room_table(client)
+        rows = table.select("id,peer_id,data").eq("room_code", code).execute().data or []
+        ids = [row["id"] for row in rows if row["peer_id"] == peer_id or row.get("data", {}).get("from") == peer_id or row.get("data", {}).get("to") == peer_id]
+        if ids:
+            table.delete().in_("id", ids).execute()
     else:
         with _rooms_lock:
             room = _rooms.get(code)

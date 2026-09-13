@@ -204,7 +204,6 @@
       window.ROOM_CODE = "{{ room_code }}";
       window.PRACTICE_TOPICS = {{ topics|tojson }};
     </script>
-    <script type="module" src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
