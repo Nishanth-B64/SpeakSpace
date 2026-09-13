@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Practice Room {{ room_code }} · SpeakSpace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="room-header">
+        <a class="brand" href="/" aria-label="SpeakSpace Home">
+          <div class="brand-icon"><img class="brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""></div>
+          <span>SpeakSpace</span>
+        </a>
+
+        <div class="room-meta">
+          <div class="room-code-pill">
+            <span>ROOM:</span>
+            <strong id="roomCodeText">{{ room_code }}</strong>
+            <button id="copyInviteBtn" class="btn-quiet" title="Copy invite link" style="padding: 3px 8px; font-size: 11px;">
+              📋 Copy Link
+            </button>
+          </div>
+
+          <div id="callStatus" class="participant-pill">
+            <i class="status-dot"></i>
+            <span id="callStatusText">Connecting…</span>
+          </div>
+
+          <button id="leaveBtn" class="btn-quiet" style="color: #f87171; border-color: rgba(244, 63, 94, 0.25);">
+            Leave Room ⎋
+          </button>
+        </div>
+      </header>
+
+      <main class="room-grid">
+        <!-- Left Column: Video Grid, Dock, Prompt Card -->
+        <div class="video-stage">
+          <div class="video-grid">
+            <!-- Local User Video -->
+            <div class="video-card">
+              <video id="localVideo" autoplay muted playsinline></video>
+              <div id="localFallback" class="video-placeholder">
+                <span style="font-size: 24px;">📹</span>
+                <span>Camera loading…</span>
+              </div>
+              <div class="video-badge">
+                <span id="localUserLabel">You</span>
+                <span id="localAudioIndicator" style="font-size: 10px; color: var(--emerald-400);">●</span>
+              </div>
+            </div>
+
+            <!-- Remote Partner Video -->
+            <div class="video-card remote">
+              <video id="remoteVideo" autoplay playsinline></video>
+              <div id="remoteFallback" class="video-placeholder">
+                <span style="font-size: 24px;">👥</span>
+                <span id="remoteStatusMessage">Waiting for your partner to join…</span>
+                <button type="button" id="copyShareBtn" class="btn-quiet" style="margin-top: 8px; font-size: 11px;">
+                  📋 Share Room Code
+                </button>
+              </div>
+              <div class="video-badge">
+                <span id="partnerLabel">Practice Partner</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Floating Call Controls -->
+          <div class="call-dock">
+            <button id="cameraBtn" class="control-btn" title="Toggle Camera">
+              📹
+            </button>
+            <button id="micBtn" class="control-btn" title="Toggle Microphone">
+              🎙️
+            </button>
+            <button id="shareMediaBtn" class="control-btn" title="Share screen or media">
+              🖥️
+            </button>
+            <button id="hangupBtn" class="control-btn danger" title="Hang Up">
+              ✕
+            </button>
+          </div>
+
+          <!-- Conversation Prompt Card -->
+          <div class="prompt-panel">
+            <div class="prompt-number" id="topicNumber">01</div>
+            <div class="prompt-body">
+              <span class="eyebrow" style="font-size: 10px; margin-bottom: 2px;">TODAY'S DISCUSSION PROMPT</span>
+              <h3 id="topicTitle">Weekend plans</h3>
+              <p id="topicPrompt">What would you like to do this weekend, and why?</p>
+            </div>
+            <button id="nextTopic" class="btn-quiet" style="flex-shrink: 0;">
+              Next Topic ↻
+            </button>
+          </div>
+
+          <div class="glass-card chat-card">
+            <div class="card-title-row">
+              <div>
+                <span class="eyebrow">PEER CHAT</span>
+                <h2>Room Messages</h2>
+              </div>
+              <span id="chatStatus" class="eyebrow-pill">Waiting for partner</span>
+            </div>
+            <div id="chatMessages" class="chat-messages" aria-live="polite">
+              <p class="chat-empty">Connect to the room to start chatting.</p>
+            </div>
+            <form id="chatForm" class="chat-form">
+              <button id="chatAttachBtn" class="btn-quiet chat-attach-btn" type="button" title="Attach a file" disabled>📎</button>
+              <input id="chatFileInput" type="file" hidden>
+              <input id="chatInput" class="input-field" maxlength="300" placeholder="Write a message..." disabled>
+              <button id="chatSendBtn" class="btn-primary" type="submit" disabled>Send</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Right Column: AI Speech Coach & Feedback -->
+        <div class="coach-column">
+          <div class="glass-card">
+            <div class="card-title-row">
+              <div>
+                <span class="eyebrow">SPEECH-TO-TEXT</span>
+                <h2>Practice Speech</h2>
+              </div>
+              <span id="recordingState" class="eyebrow-pill" style="color: var(--emerald-400);">Ready</span>
+            </div>
+
+            <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
+              Record your speech to receive instant transcription and natural grammar suggestions.
+            </p>
+
+            <div class="record-btn-group">
+              <div style="display: flex; gap: 8px;">
+                <button id="recordBtn" class="btn-browser-record" style="flex: 1;">
+                  <span class="pulse-dot"></span>
+                  <span>Browser Mic</span>
+                </button>
+                <button id="stopBtn" class="btn-quiet" disabled style="padding: 10px 14px;">
+                  Stop & Analyze
+                </button>
+              </div>
+            </div>
+
+            <div class="transcript-card">
+              <span class="transcript-label">Recognized English Speech</span>
+              <p id="transcript" class="transcript-text empty">Your spoken words will appear here…</p>
+            </div>
+
+            <details style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">
+              <summary style="cursor: pointer; user-select: none;">Or paste / type a sentence to check</summary>
+              <div style="margin-top: 10px;">
+                <textarea id="manualTranscript" class="input-field" style="height: 64px; resize: vertical; margin-bottom: 8px;" placeholder="e.g. I am looking forward to meet my friends."></textarea>
+                <button id="checkTextBtn" class="btn-quiet" style="color: var(--emerald-400); border-color: var(--border-active);">
+                  Analyze Text with SpeakSpace AI →
+                </button>
+              </div>
+            </details>
+          </div>
+
+          <!-- AI Language Coach Feedback Card -->
+          <div class="glass-card">
+            <div class="card-title-row">
+              <div>
+                <span class="eyebrow">AI CONVERSATION COACH</span>
+                <h2>Grammar Feedback</h2>
+              </div>
+              <span class="badge-ai">✦ SpeakSpace AI</span>
+            </div>
+
+            <div id="feedbackEmpty" class="feedback-empty-state">
+              <div class="icon">✦</div>
+              <p>Speak or submit a sentence above to see natural phrasing, grammar notes, and helpful tips.</p>
+            </div>
+
+            <div id="feedbackContent" class="feedback-container" hidden>
+              <div class="feedback-corrected-box">
+                <span class="label">Natural Way to Say It</span>
+                <p id="correctedText"></p>
+              </div>
+
+              <p id="feedbackSummary" class="feedback-summary-text"></p>
+
+              <div id="issuesList" class="issues-stream"></div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+
+      <footer>
+        Speak bravely. Make mistakes. Grow quickly. · SpeakSpace
+      </footer>
+    </div>
+
+    <!-- Hidden Toast Notification -->
+    <div id="toast" class="toast-msg" style="display: none;">
+      <span id="toastIcon">📋</span>
+      <span id="toastMsg">Notification</span>
+    </div>
+
+    <script>
+      window.ROOM_CODE = "{{ room_code }}";
+      window.PRACTICE_TOPICS = {{ topics|tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        initRoomPage();
+      });
+    </script>
+  </body>
+</html>

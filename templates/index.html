@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SpeakSpace · Real-Time English Practice & AI Coach</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="SpeakSpace Home">
+          <div class="brand-icon"><img class="brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""></div>
+          <span>SpeakSpace</span>
+        </a>
+        <nav class="nav-links">
+          <a class="nav-link active" href="/">Home</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero-grid">
+          <div>
+            <div class="eyebrow eyebrow-pill">✦ Live Peer Practice & AI Coach</div>
+            <h1>Master spoken English.<br><span class="text-gradient">Real practice, zero hesitation.</span></h1>
+            <p class="lede" style="margin-top: 16px;">
+              Connect with a partner for direct peer-to-peer video conversations, explore curated discussion topics, and receive instant, warm grammar coaching powered by SpeakSpace AI.
+            </p>
+            <div class="hero-actions">
+              <a href="/create" class="btn-primary">
+                <span>🚀 Create a Practice Room</span>
+                <span style="font-size: 18px;">→</span>
+              </a>
+              <a href="/join" class="btn-secondary">
+                <span>🔑 Join with Room Code</span>
+              </a>
+            </div>
+
+            <div class="hero-features">
+              <div class="hero-feature-item">
+                <strong>⚡ WebRTC P2P Video</strong>
+                <span>Private & high-quality browser audio/video</span>
+              </div>
+              <div class="hero-feature-item">
+                <strong>🎙️ Browser Speech-to-Text</strong>
+                <span>Record in your browser and get instant transcription</span>
+              </div>
+              <div class="hero-feature-item">
+                <strong>✦ SpeakSpace AI Feedback</strong>
+                <span>Encouraging grammar corrections & natural phrasing</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-card" style="padding: 32px;">
+            <div class="eyebrow">ROOM READY</div>
+            <h2 style="margin-bottom: 12px;">Practice with up to five people</h2>
+            <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6;">
+              Create one room for your group, or join with the code shared by your host. No account needed.
+            </p>
+          </div>
+        </section>
+
+        <section class="glass-card" style="margin-bottom: 40px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <span class="eyebrow">TODAY'S DISCUSSION PROMPTS</span>
+              <h2>Conversation Topics Available in Rooms</h2>
+            </div>
+            <span class="eyebrow-pill" style="color: var(--emerald-400);">Curated Prompts</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+            {% for topic in topics %}
+            <div style="background: rgba(8, 13, 20, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 18px;">
+              <span style="font-family: var(--font-mono); font-size: 11px; color: var(--emerald-400); font-weight: 700;">PROMPT 0{{ loop.index }}</span>
+              <h3 style="font-size: 16px; margin: 6px 0; color: #fff;">{{ topic.title }}</h3>
+              <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.45;">"{{ topic.prompt }}"</p>
+            </div>
+            {% endfor %}
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        Speak bravely. Make mistakes. Grow quickly. · SpeakSpace Language Practice
+      </footer>
+    </div>
+  </body>
+</html>

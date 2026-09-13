@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Create a Practice Room · SpeakSpace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="SpeakSpace Home">
+          <div class="brand-icon"><img class="brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""></div>
+          <span>SpeakSpace</span>
+        </a>
+        <nav class="nav-links">
+          <a class="nav-link" href="/">Home</a>
+          <a class="nav-link active" href="/create">Create Room</a>
+          <a class="nav-link" href="/join">Join Room</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="page-container-centered">
+          <div class="page-header-block">
+            <div class="eyebrow eyebrow-pill">HOST A SESSION</div>
+            <h1>Create a Practice Room</h1>
+            <p class="lede">Generate a private room, test your microphone & camera, and invite your conversation partner.</p>
+          </div>
+
+          <div class="glass-card">
+            <form id="createRoomForm" onsubmit="event.preventDefault(); launchRoom();">
+              <div class="form-group">
+                <label for="hostName">Your Display Name</label>
+                <input id="hostName" class="input-field" maxlength="30" placeholder="e.g. Alex" required>
+              </div>
+
+              <div class="form-group">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <label for="roomCode">Room Code</label>
+                  <button type="button" id="randomizeCodeBtn" class="btn-quiet" style="padding: 4px 10px; font-size: 12px;">
+                    🎲 Roll New Code
+                  </button>
+                </div>
+                <div class="code-badge-display">
+                  <span id="roomCodeDisplay">FLUENT-ROOM</span>
+                  <input type="hidden" id="roomCode" value="FLUENT-ROOM">
+                  <button type="button" id="copyCodeBtn" class="btn-quiet" title="Copy code" style="padding: 6px 12px;">
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="conversationFocus">Conversation Topic / Goal</label>
+                <select id="conversationFocus" class="input-field" style="background: rgba(8, 13, 20, 0.7); cursor: pointer;">
+                  {% for topic in topics %}
+                  <option value="{{ topic.title }}">{{ topic.title }}</option>
+                  {% endfor %}
+                  <option value="custom">Custom topic</option>
+                </select>
+                <input id="customTopic" class="input-field" maxlength="80" placeholder="Enter your own topic" style="display: none; margin-top: 10px;">
+              </div>
+
+              <!-- Device Preview & Readiness Check -->
+              <div class="device-preview-card">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                  <span style="font-size: 13px; font-weight: 600; color: #fff;">Camera & Mic Preview</span>
+                  <div style="display: flex; gap: 6px;">
+                    <button type="button" id="testCameraBtn" class="btn-quiet" style="font-size: 12px; padding: 4px 8px;">Test Camera</button>
+                    <button type="button" id="testMicBtn" class="btn-quiet" style="font-size: 12px; padding: 4px 8px;">Test Mic</button>
+                  </div>
+                </div>
+
+                <div class="preview-video-container">
+                  <video id="previewVideo" autoplay playsinline muted></video>
+                  <div id="previewFallback" class="preview-fallback">
+                    <span>📹</span>
+                    <span>Test the camera and microphone separately</span>
+                  </div>
+                </div>
+
+                <div class="preview-controls">
+                  <div class="audio-meter">
+                    <span>Mic Level:</span>
+                    <div class="audio-meter-bar">
+                      <div id="audioMeterFill" class="audio-meter-fill"></div>
+                    </div>
+                  </div>
+                  <span id="deviceStatusText" style="font-size: 12px; color: var(--text-muted);">Camera and mic not tested</span>
+                </div>
+              </div>
+
+              <button type="submit" id="submitLaunchBtn" class="btn-primary" style="width: 100%; padding: 15px;">
+                <span>🚀 Launch Practice Room</span>
+                <span style="font-size: 18px;">→</span>
+              </button>
+            </form>
+
+            <div style="margin-top: 24px; text-align: center;">
+              <span style="font-size: 13px; color: var(--text-muted);">Looking to enter an existing room? </span>
+              <a href="/join" style="font-size: 13px; color: var(--emerald-400); font-weight: 600; text-decoration: underline;">Join Room instead</a>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        Speak bravely. Make mistakes. Grow quickly. · SpeakSpace
+      </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        initCreatePage();
+      });
+    </script>
+  </body>
+</html>

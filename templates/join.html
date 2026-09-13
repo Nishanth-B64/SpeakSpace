@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Join a Practice Room · SpeakSpace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="SpeakSpace Home">
+          <div class="brand-icon"><img class="brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""></div>
+          <span>SpeakSpace</span>
+        </a>
+        <nav class="nav-links">
+          <a class="nav-link" href="/">Home</a>
+          <a class="nav-link" href="/create">Create Room</a>
+          <a class="nav-link active" href="/join">Join Room</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="page-container-centered">
+          <div class="page-header-block">
+            <div class="eyebrow eyebrow-pill">ENTER SESSION</div>
+            <h1>Join a Practice Room</h1>
+            <p class="lede">Enter your name and the room code provided by your practice partner.</p>
+          </div>
+
+          <div class="glass-card">
+            <form id="joinRoomForm" onsubmit="event.preventDefault(); proceedToRoom();">
+              <div class="form-group">
+                <label for="participantName">Your Display Name</label>
+                <input id="participantName" class="input-field" maxlength="30" placeholder="e.g. Priya" required>
+              </div>
+
+              <div class="form-group">
+                <label for="joinRoomCode">Room Code</label>
+                <input id="joinRoomCode" class="input-field" maxlength="32" placeholder="e.g. MORNING-CHAT" value="{{ prefill_code }}" style="font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 1px;" required>
+              </div>
+
+              <!-- Device Preview & Readiness Check -->
+              <div class="device-preview-card">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                  <span style="font-size: 13px; font-weight: 600; color: #fff;">Camera & Mic Preview</span>
+                  <div style="display: flex; gap: 6px;">
+                    <button type="button" id="testCameraBtn" class="btn-quiet" style="font-size: 12px; padding: 4px 8px;">Test Camera</button>
+                    <button type="button" id="testMicBtn" class="btn-quiet" style="font-size: 12px; padding: 4px 8px;">Test Mic</button>
+                  </div>
+                </div>
+
+                <div class="preview-video-container">
+                  <video id="previewVideo" autoplay playsinline muted></video>
+                  <div id="previewFallback" class="preview-fallback">
+                    <span>📹</span>
+                    <span>Test the camera and microphone separately</span>
+                  </div>
+                </div>
+
+                <div class="preview-controls">
+                  <div class="audio-meter">
+                    <span>Mic Level:</span>
+                    <div class="audio-meter-bar">
+                      <div id="audioMeterFill" class="audio-meter-fill"></div>
+                    </div>
+                  </div>
+                  <span id="deviceStatusText" style="font-size: 12px; color: var(--text-muted);">Camera and mic not tested</span>
+                </div>
+              </div>
+
+              <button type="submit" id="submitJoinBtn" class="btn-primary" style="width: 100%; padding: 15px;">
+                <span>🔑 Enter Practice Room</span>
+                <span style="font-size: 18px;">→</span>
+              </button>
+            </form>
+
+            <div style="margin-top: 24px; text-align: center;">
+              <span style="font-size: 13px; color: var(--text-muted);">Don't have a room yet? </span>
+              <a href="/create" style="font-size: 13px; color: var(--emerald-400); font-weight: 600; text-decoration: underline;">Create a Room instead</a>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        Speak bravely. Make mistakes. Grow quickly. · SpeakSpace
+      </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        initJoinPage();
+      });
+    </script>
+  </body>
+</html>
