@@ -255,6 +255,7 @@ const state = {
   audioContext: null,
   audioChunks: [],
   fileTransfers: new Map(),
+  pendingCandidates: [],
   topic: 0
   ,customTopic: ''
 };
@@ -486,11 +487,27 @@ function makePeerConnection() {
 
 async function signal(message) {
   if (!state.room || !state.partner) return;
-  await api('/api/rooms/signal', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ room: state.room, from: state.peerId, to: state.partner.id, message })
-  });
+  try {
+    await api('/api/rooms/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: state.room, from: state.peerId, to: state.partner.id, message })
+    });
+  } catch (error) {
+    console.warn('Signaling request failed:', error.message);
+    setCallStatus('Signaling error. Retrying…', false);
+  }
+}
+
+async function applyPendingCandidates(pc) {
+  const candidates = state.pendingCandidates.splice(0);
+  for (const candidate of candidates) {
+    try {
+      await pc.addIceCandidate(candidate);
+    } catch (error) {
+      console.warn('Queued ICE candidate ignored', error);
+    }
+  }
 }
 
 async function offerPeer() {
@@ -509,17 +526,23 @@ async function handleSignal(packet) {
   const msg = packet.message;
   if (msg.type === 'offer') {
     await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
+    await applyPendingCandidates(pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     await signal({ type: 'answer', sdp: answer.sdp });
     setCallStatus('Connecting…');
   } else if (msg.type === 'answer') {
     await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+    await applyPendingCandidates(pc);
   } else if (msg.type === 'candidate' && msg.candidate) {
-    try {
-      await pc.addIceCandidate(msg.candidate);
-    } catch (e) {
-      console.warn('ICE candidate ignored', e);
+    if (pc.remoteDescription) {
+      try {
+        await pc.addIceCandidate(msg.candidate);
+      } catch (error) {
+        console.warn('ICE candidate ignored', error);
+      }
+    } else {
+      state.pendingCandidates.push(msg.candidate);
     }
   }
 }
