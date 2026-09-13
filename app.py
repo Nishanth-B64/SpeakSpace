@@ -209,6 +209,14 @@ def poll_room():
     if client:
         table = supabase_room_table(client)
         rows = table.select("id,peer_id,data").eq("room_code", code).execute().data or []
+        stale_ids = [
+            row["id"] for row in rows
+            if row.get("data", {}).get("type") == "peer"
+            and time.time() - float(row["data"].get("seen", 0)) >= SIGNAL_TTL_SECONDS
+        ]
+        if stale_ids:
+            table.delete().in_("id", stale_ids).execute()
+            rows = [row for row in rows if row["id"] not in stale_ids]
         member = next((row for row in rows if row["peer_id"] == peer_id and row.get("data", {}).get("type") == "peer"), None)
         if not member:
             return error("Room session expired. Join again.", 404)
@@ -222,6 +230,7 @@ def poll_room():
         peers = [{"id": row["peer_id"], "name": row["data"].get("name", "Guest")} for row in peers_data if row["peer_id"] != peer_id]
     else:
         with _rooms_lock:
+            clean_expired_rooms()
             room = _rooms.get(code)
             if not room or peer_id not in room["peers"]:
                 return error("Room session expired. Join again.", 404)

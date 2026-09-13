@@ -474,12 +474,17 @@ function makePeerConnection() {
     setCallStatus(`${state.partner?.name || 'Partner'} connected`, true);
   };
   pc.onconnectionstatechange = () => {
-    if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+    if (pc.connectionState === 'connected') {
+      setCallStatus(`${state.partner?.name || 'Partner'} connected`, true);
+      if ($('remoteFallback')) $('remoteFallback').style.display = 'none';
+    } else if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
       setCallStatus('Partner disconnected', false);
       if ($('remoteFallback')) {
         $('remoteFallback').style.display = 'flex';
-        $('remoteStatusMessage').textContent = 'Partner disconnected. Waiting to reconnect…';
+        $('remoteStatusMessage').textContent = 'Partner disconnected.';
       }
+    } else if (state.partner) {
+      setCallStatus('Connecting to partner…', false);
     }
   };
   return pc;
@@ -556,6 +561,16 @@ async function poll() {
   try {
     const data = await api(`/api/rooms/poll?room=${encodeURIComponent(state.room)}&peerId=${encodeURIComponent(state.peerId)}`);
     const peer = data.peers[0];
+    if (state.partner && !peer) {
+      state.pc?.close();
+      state.pc = null;
+      state.chatChannel = null;
+      state.pendingCandidates = [];
+      state.partner = null;
+      setCallStatus('Partner left the room', false);
+      if ($('remoteFallback')) $('remoteFallback').style.display = 'flex';
+      if ($('remoteStatusMessage')) $('remoteStatusMessage').textContent = 'Your partner left the room.';
+    }
     if (peer && !state.partner) {
       state.partner = peer;
       if ($('partnerLabel')) $('partnerLabel').textContent = peer.name;
