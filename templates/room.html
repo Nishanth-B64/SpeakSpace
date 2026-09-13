@@ -51,18 +51,15 @@
               </div>
             </div>
 
-            <!-- Remote Partner Video -->
-            <div class="video-card remote">
-              <video id="remoteVideo" autoplay playsinline></video>
-              <div id="remoteFallback" class="video-placeholder">
-                <span style="font-size: 24px;">👥</span>
-                <span id="remoteStatusMessage">Waiting for your partner to join…</span>
-                <button type="button" id="copyShareBtn" class="btn-quiet" style="margin-top: 8px; font-size: 11px;">
-                  📋 Share Room Code
-                </button>
-              </div>
-              <div class="video-badge">
-                <span id="partnerLabel">Practice Partner</span>
+            <div id="remoteVideos" class="remote-videos">
+              <div id="remoteWaitingCard" class="video-card remote">
+                <div class="video-placeholder">
+                  <span style="font-size: 24px;">👥</span>
+                  <span id="remoteStatusMessage">Waiting for participants to join…</span>
+                  <button type="button" id="copyShareBtn" class="btn-quiet" style="margin-top: 8px; font-size: 11px;">
+                    📋 Share Room Code
+                  </button>
+                </div>
               </div>
             </div>
           </div>

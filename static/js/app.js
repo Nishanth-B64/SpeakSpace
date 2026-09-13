@@ -247,6 +247,8 @@ const state = {
   partner: null,
   pc: null,
   chatChannel: null,
+  connections: new Map(),
+  peers: new Map(),
   screenTrack: null,
   stream: null,
   polling: null,
@@ -255,7 +257,7 @@ const state = {
   audioContext: null,
   audioChunks: [],
   fileTransfers: new Map(),
-  pendingCandidates: [],
+  pendingCandidates: new Map(),
   topic: 0
   ,customTopic: ''
 };
@@ -453,50 +455,79 @@ async function sendChatFile(file) {
 }
 
 function makePeerConnection() {
-  if (state.pc) return state.pc;
+  const peer = arguments[0];
+  if (!peer) return null;
+  if (state.connections.has(peer.id)) return state.connections.get(peer.id);
   const pc = new RTCPeerConnection(rtcConfig);
-  state.pc = pc;
+  state.connections.set(peer.id, pc);
+  state.peers.set(peer.id, peer);
   pc.ondatachannel = ({ channel }) => setupChatChannel(channel);
   if (state.stream) {
     state.stream.getTracks().forEach(track => pc.addTrack(track, state.stream));
   }
   pc.onicecandidate = ({ candidate }) => {
-    if (candidate && state.partner) {
-      signal({ type: 'candidate', candidate: candidate.toJSON() });
+    if (candidate) {
+      signal(peer, { type: 'candidate', candidate: candidate.toJSON() });
     }
   };
   pc.ontrack = ({ streams }) => {
-    if ($('remoteVideo')) {
-      $('remoteVideo').srcObject = streams[0];
-      $('remoteVideo').style.display = 'block';
+    const video = document.querySelector(`#remote-video-${CSS.escape(peer.id)}`);
+    if (video) {
+      video.srcObject = streams[0];
+      video.style.display = 'block';
     }
-    if ($('remoteFallback')) $('remoteFallback').style.display = 'none';
-    setCallStatus(`${state.partner?.name || 'Partner'} connected`, true);
+    document.querySelector(`#remote-fallback-${CSS.escape(peer.id)}`)?.remove();
+    updateCallStatus();
   };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
-      setCallStatus(`${state.partner?.name || 'Partner'} connected`, true);
-      if ($('remoteFallback')) $('remoteFallback').style.display = 'none';
+      updateCallStatus();
     } else if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
-      setCallStatus('Partner disconnected', false);
-      if ($('remoteFallback')) {
-        $('remoteFallback').style.display = 'flex';
-        $('remoteStatusMessage').textContent = 'Partner disconnected.';
-      }
-    } else if (state.partner) {
-      setCallStatus('Connecting to partner…', false);
+      updateCallStatus();
+    } else {
+      updateCallStatus();
     }
   };
   return pc;
 }
 
-async function signal(message) {
-  if (!state.room || !state.partner) return;
+function updateCallStatus() {
+  const peers = [...state.connections.values()];
+  const connected = peers.filter(pc => pc.connectionState === 'connected').length;
+  if (connected) setCallStatus(`Connected to ${connected} participant${connected === 1 ? '' : 's'}`, true);
+  else if (state.peers.size) setCallStatus('Connecting to participants…', false);
+}
+
+function createRemoteTile(peer) {
+  const container = $('remoteVideos');
+  if (!container || document.getElementById(`remote-card-${peer.id}`)) return;
+  $('remoteWaitingCard')?.remove();
+  const card = document.createElement('div');
+  card.className = 'video-card remote';
+  card.id = `remote-card-${peer.id}`;
+  card.innerHTML = `<video id="remote-video-${peer.id}" autoplay playsinline></video><div id="remote-fallback-${peer.id}" class="video-placeholder"><span style="font-size: 24px;">👤</span><span>Connecting…</span></div><div class="video-badge"><span>${peer.name}</span></div>`;
+  container.appendChild(card);
+}
+
+function removeRemotePeer(peerId) {
+  state.connections.get(peerId)?.close();
+  state.connections.delete(peerId);
+  state.peers.delete(peerId);
+  state.pendingCandidates.delete(peerId);
+  document.getElementById(`remote-card-${peerId}`)?.remove();
+  if (!state.peers.size && $('remoteVideos')) {
+    $('remoteVideos').innerHTML = '<div id="remoteWaitingCard" class="video-card remote"><div class="video-placeholder"><span style="font-size: 24px;">👥</span><span id="remoteStatusMessage">Waiting for participants to join…</span><button type="button" id="copyShareBtn" class="btn-quiet" style="margin-top: 8px; font-size: 11px;">📋 Share Room Code</button></div></div>';
+  }
+  updateCallStatus();
+}
+
+async function signal(peer, message) {
+  if (!state.room || !peer) return;
   try {
     await api('/api/rooms/signal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: state.room, from: state.peerId, to: state.partner.id, message })
+      body: JSON.stringify({ room: state.room, from: state.peerId, to: peer.id, message })
     });
   } catch (error) {
     console.warn('Signaling request failed:', error.message);
@@ -505,7 +536,8 @@ async function signal(message) {
 }
 
 async function applyPendingCandidates(pc) {
-  const candidates = state.pendingCandidates.splice(0);
+  const candidates = state.pendingCandidates.get(pc._peerId) || [];
+  state.pendingCandidates.delete(pc._peerId);
   for (const candidate of candidates) {
     try {
       await pc.addIceCandidate(candidate);
@@ -515,27 +547,30 @@ async function applyPendingCandidates(pc) {
   }
 }
 
-async function offerPeer() {
-  const pc = makePeerConnection();
+async function offerPeer(peer) {
+  const pc = makePeerConnection(peer);
+  pc._peerId = peer.id;
   if (!state.chatChannel) setupChatChannel(pc.createDataChannel('speakspace-chat'));
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  await signal({ type: 'offer', sdp: offer.sdp });
-  setCallStatus('Calling partner…');
+  await signal(peer, { type: 'offer', sdp: offer.sdp });
+  updateCallStatus();
 }
 
 async function handleSignal(packet) {
-  state.partner = { id: packet.from, name: state.partner?.name || 'Practice partner' };
-  if ($('partnerLabel')) $('partnerLabel').textContent = state.partner.name;
-  const pc = makePeerConnection();
+  const peer = state.peers.get(packet.from) || { id: packet.from, name: 'Practice partner' };
+  state.peers.set(peer.id, peer);
+  createRemoteTile(peer);
+  const pc = makePeerConnection(peer);
+  pc._peerId = peer.id;
   const msg = packet.message;
   if (msg.type === 'offer') {
     await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp });
     await applyPendingCandidates(pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await signal({ type: 'answer', sdp: answer.sdp });
-    setCallStatus('Connecting…');
+    await signal(peer, { type: 'answer', sdp: answer.sdp });
+    updateCallStatus();
   } else if (msg.type === 'answer') {
     await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
     await applyPendingCandidates(pc);
@@ -547,34 +582,31 @@ async function handleSignal(packet) {
         console.warn('ICE candidate ignored', error);
       }
     } else {
-      state.pendingCandidates.push(msg.candidate);
+      if (!state.pendingCandidates.has(peer.id)) state.pendingCandidates.set(peer.id, []);
+      state.pendingCandidates.get(peer.id).push(msg.candidate);
     }
   }
 }
 
-function shouldCreateOffer() {
-  return state.partner && state.peerId.localeCompare(state.partner.id) < 0;
+function shouldCreateOffer(peer) {
+  return peer && state.peerId.localeCompare(peer.id) < 0;
 }
 
 async function poll() {
   if (!state.room) return;
   try {
     const data = await api(`/api/rooms/poll?room=${encodeURIComponent(state.room)}&peerId=${encodeURIComponent(state.peerId)}`);
-    const peer = data.peers[0];
-    if (state.partner && !peer) {
-      state.pc?.close();
-      state.pc = null;
-      state.chatChannel = null;
-      state.pendingCandidates = [];
-      state.partner = null;
-      setCallStatus('Partner left the room', false);
-      if ($('remoteFallback')) $('remoteFallback').style.display = 'flex';
-      if ($('remoteStatusMessage')) $('remoteStatusMessage').textContent = 'Your partner left the room.';
+    const currentPeerIds = new Set(data.peers.map(peer => peer.id));
+    for (const peerId of state.peers.keys()) {
+      if (!currentPeerIds.has(peerId)) removeRemotePeer(peerId);
     }
-    if (peer && !state.partner) {
-      state.partner = peer;
-      if ($('partnerLabel')) $('partnerLabel').textContent = peer.name;
-      if (shouldCreateOffer()) await offerPeer();
+    for (const peer of data.peers) {
+      state.peers.set(peer.id, peer);
+      createRemoteTile(peer);
+      if (!state.connections.has(peer.id)) {
+        makePeerConnection(peer)._peerId = peer.id;
+        if (shouldCreateOffer(peer)) await offerPeer(peer);
+      }
     }
     for (const packet of data.signals) {
       await handleSignal(packet);
@@ -638,10 +670,10 @@ async function initRoomPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: state.name, room: state.room, peerId: state.peerId })
     });
-    state.partner = data.peers[0] || null;
-    if (state.partner && $('partnerLabel')) {
-      $('partnerLabel').textContent = state.partner.name;
-    }
+    data.peers.forEach(peer => {
+      state.peers.set(peer.id, peer);
+      createRemoteTile(peer);
+    });
   } catch (err) {
     setCallStatus(`Error: ${err.message}`);
     showToast(err.message, '⚠️');
@@ -649,15 +681,18 @@ async function initRoomPage() {
 
   // Device permissions should not prevent the peer from joining the room.
   try {
-    setCallStatus(state.partner ? 'Starting camera & audio…' : 'Waiting for more people (1/5)');
+    setCallStatus(state.peers.size ? 'Starting camera & audio…' : 'Waiting for participants (1/5)');
     await getMedia();
   } catch (err) {
     console.warn('Media setup failed:', err);
     showToast('Joined without camera or microphone. Check browser permissions.', '⚠️');
   }
-  setCallStatus(state.partner ? 'Connecting to partner…' : 'Waiting for more people (1/5)');
+  setCallStatus(state.peers.size ? 'Connecting to participants…' : 'Waiting for participants (1/5)');
   startPolling();
-  if (shouldCreateOffer()) await offerPeer();
+  for (const peer of state.peers.values()) {
+    makePeerConnection(peer)._peerId = peer.id;
+    if (shouldCreateOffer(peer)) await offerPeer(peer);
+  }
   showToast(`Joined room ${state.room}`, '🎉');
 
   // Camera & Mic toggles
@@ -694,8 +729,8 @@ function leaveRoom() {
     state.stream.getTracks().forEach(t => t.stop());
     state.stream = null;
   }
-  state.pc?.close();
-  state.pc = null;
+  for (const pc of state.connections.values()) pc.close();
+  state.connections.clear();
   window.location.href = '/';
 }
 window.addEventListener('beforeunload', leaveRoom);
@@ -706,9 +741,11 @@ async function toggleCamera() {
   if (videoTrack) {
     videoTrack.stop();
     state.stream.removeTrack(videoTrack);
-    const sender = state.pc?.getSenders().find(s => s.track === videoTrack || s.track?.kind === 'video');
-    if (sender) {
-      try { await sender.replaceTrack(null); } catch (e) { console.warn(e); }
+    for (const pc of state.connections.values()) {
+      const sender = pc.getSenders().find(s => s.track === videoTrack || s.track?.kind === 'video');
+      if (sender) {
+        try { await sender.replaceTrack(null); } catch (e) { console.warn(e); }
+      }
     }
     if (btn) btn.classList.add('muted');
     if ($('localVideo')) $('localVideo').style.display = 'none';
@@ -725,11 +762,13 @@ async function toggleCamera() {
         $('localVideo').style.display = 'block';
       }
       if ($('localFallback')) $('localFallback').style.display = 'none';
-      const sender = state.pc?.getSenders().find(s => s.track === null || s.track?.kind === 'video');
-      if (sender) {
-        try { await sender.replaceTrack(newTrack); } catch (e) { console.warn(e); }
-      } else if (state.pc) {
-        state.pc.addTrack(newTrack, state.stream);
+      for (const pc of state.connections.values()) {
+        const sender = pc.getSenders().find(s => s.track === null || s.track?.kind === 'video');
+        if (sender) {
+          try { await sender.replaceTrack(newTrack); } catch (e) { console.warn(e); }
+        } else {
+          pc.addTrack(newTrack, state.stream);
+        }
       }
       if (btn) btn.classList.remove('muted');
     } catch (err) {
@@ -763,13 +802,15 @@ async function toggleMediaShare() {
   try {
     const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const screenTrack = displayStream.getVideoTracks()[0];
-    const sender = state.pc?.getSenders().find(item => item.track?.kind === 'video');
-    if (!sender || !screenTrack) {
+    const senders = [...state.connections.values()]
+      .map(pc => pc.getSenders().find(item => item.track?.kind === 'video'))
+      .filter(Boolean);
+    if (!senders.length || !screenTrack) {
       displayStream.getTracks().forEach(track => track.stop());
       showToast('Join a connected room before sharing media.', '⚠️');
       return;
     }
-    await sender.replaceTrack(screenTrack);
+    await Promise.all(senders.map(sender => sender.replaceTrack(screenTrack)));
     state.screenTrack = screenTrack;
     if ($('localVideo')) {
       $('localVideo').srcObject = new MediaStream([screenTrack]);
@@ -798,8 +839,10 @@ async function stopMediaShare() {
   screenTrack.stop();
   state.screenTrack = null;
   const cameraTrack = state.stream?.getVideoTracks()[0] || null;
-  const sender = state.pc?.getSenders().find(item => item.track?.kind === 'video' || item.track === screenTrack);
-  if (sender) await sender.replaceTrack(cameraTrack);
+  const senders = [...state.connections.values()]
+    .map(pc => pc.getSenders().find(item => item.track?.kind === 'video' || item.track === screenTrack))
+    .filter(Boolean);
+  await Promise.all(senders.map(sender => sender.replaceTrack(cameraTrack)));
   if ($('localVideo')) {
     $('localVideo').srcObject = state.stream || null;
     $('localVideo').style.display = cameraTrack ? 'block' : 'none';
