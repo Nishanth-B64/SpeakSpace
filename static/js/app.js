@@ -290,6 +290,21 @@ function showTopic() {
   if ($('topicPrompt')) $('topicPrompt').textContent = topic.prompt;
 }
 
+function setRemoteCameraState(peerId, cameraOn) {
+  const video = document.querySelector(`#remote-video-${CSS.escape(peerId)}`);
+  const fallback = document.querySelector(`#remote-fallback-${CSS.escape(peerId)}`);
+  if (video) video.style.display = cameraOn ? 'block' : 'none';
+  if (fallback) {
+    fallback.querySelector('span:last-child').textContent = cameraOn ? 'Connecting…' : 'Camera off';
+    fallback.style.display = cameraOn ? 'none' : 'flex';
+  }
+}
+
+function sendCameraStatus(cameraOn) {
+  if (!state.chatChannel || state.chatChannel.readyState !== 'open') return;
+  state.chatChannel.send(JSON.stringify({ type: 'camera-status', cameraOn }));
+}
+
 async function getMedia() {
   if (state.stream) return state.stream;
   state.stream = await navigator.mediaDevices.getUserMedia({
@@ -407,6 +422,7 @@ function setupChatChannel(channel) {
   channel.onopen = () => {
     if ($('chatStatus')) $('chatStatus').textContent = 'Connected';
     setChatControlsEnabled(true);
+    sendCameraStatus(Boolean(state.stream?.getVideoTracks().length));
   };
   channel.onclose = () => {
     if ($('chatStatus')) $('chatStatus').textContent = 'Disconnected';
@@ -442,6 +458,8 @@ function setupChatChannel(channel) {
         state.activeFileTransferId = null;
       } else if (message.type === 'chat-delete') {
         document.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`)?.remove();
+      } else if (message.type === 'camera-status') {
+        setRemoteCameraState(channel._peerId, message.cameraOn === true);
       } else {
         addChatMessage(message.text, message.sender || 'Partner', false, message.id);
       }
@@ -497,9 +515,13 @@ function makePeerConnection() {
   if (!peer) return null;
   if (state.connections.has(peer.id)) return state.connections.get(peer.id);
   const pc = new RTCPeerConnection(rtcConfig);
+  pc._peerId = peer.id;
   state.connections.set(peer.id, pc);
   state.peers.set(peer.id, peer);
-  pc.ondatachannel = ({ channel }) => setupChatChannel(channel);
+  pc.ondatachannel = ({ channel }) => {
+    channel._peerId = peer.id;
+    setupChatChannel(channel);
+  };
   if (state.stream) {
     state.stream.getTracks().forEach(track => pc.addTrack(track, state.stream));
   }
@@ -514,7 +536,7 @@ function makePeerConnection() {
       video.srcObject = streams[0];
       video.style.display = 'block';
     }
-    document.querySelector(`#remote-fallback-${CSS.escape(peer.id)}`)?.remove();
+    setRemoteCameraState(peer.id, true);
     updateCallStatus();
   };
   pc.onconnectionstatechange = () => {
@@ -588,7 +610,11 @@ async function applyPendingCandidates(pc) {
 async function offerPeer(peer) {
   const pc = makePeerConnection(peer);
   pc._peerId = peer.id;
-  if (!state.chatChannel) setupChatChannel(pc.createDataChannel('speakspace-chat'));
+  if (!state.chatChannel) {
+    const channel = pc.createDataChannel('speakspace-chat');
+    channel._peerId = peer.id;
+    setupChatChannel(channel);
+  }
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await signal(peer, { type: 'offer', sdp: offer.sdp });
@@ -793,6 +819,8 @@ async function toggleCamera() {
     if (btn) btn.classList.add('muted');
     if ($('localVideo')) $('localVideo').style.display = 'none';
     if ($('localFallback')) $('localFallback').style.display = 'flex';
+    if ($('localFallback')) $('localFallback').querySelector('span:last-child').textContent = 'Camera off';
+    sendCameraStatus(false);
   } else {
     try {
       if (btn) btn.disabled = true;
@@ -805,6 +833,7 @@ async function toggleCamera() {
         $('localVideo').style.display = 'block';
       }
       if ($('localFallback')) $('localFallback').style.display = 'none';
+      if ($('localFallback')) $('localFallback').querySelector('span:last-child').textContent = 'Camera loading…';
       for (const pc of state.connections.values()) {
         const sender = pc.getSenders().find(s => s.track === null || s.track?.kind === 'video');
         if (sender) {
@@ -814,6 +843,7 @@ async function toggleCamera() {
         }
       }
       if (btn) btn.classList.remove('muted');
+      sendCameraStatus(true);
     } catch (err) {
       console.error('Could not restart camera:', err);
       showToast('Could not restart camera.', '⚠️');
