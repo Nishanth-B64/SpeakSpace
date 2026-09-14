@@ -570,6 +570,7 @@ function updateCallStatus() {
   const connected = peers.filter(pc => pc.connectionState === 'connected').length;
   if (connected) setCallStatus(`Connected to ${connected} participant${connected === 1 ? '' : 's'}`, true);
   else if (state.peers.size) setCallStatus('Connecting to participants…', false);
+  else setCallStatus('Waiting for participant (1/2)', false);
 }
 
 function createRemoteTile(peer) {
