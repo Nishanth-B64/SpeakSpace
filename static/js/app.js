@@ -238,7 +238,8 @@ async function proceedToRoom() {
   if (submitButton) submitButton.disabled = true;
   try {
     const room = await api(`/api/rooms/status?room=${encodeURIComponent(code)}`);
-    if (!room.exists) throw new Error('Room not found. Check the room code and try again.');
+    const roomExists = room.exists === true || Number(room.peerCount) > 0;
+    if (!roomExists) throw new Error('Room not found. Check the room code and try again.');
     localStorage.setItem('speakspace_name', name);
     cleanupDevicePreview();
     window.location.href = `/room/${encodeURIComponent(code)}?name=${encodeURIComponent(name)}`;
