@@ -42,15 +42,7 @@ let previewAnalyser = null;
 let previewAnimFrame = null;
 
 async function requestMicrophoneStream() {
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: { echoCancellation: true, noiseSuppression: true }
-    });
-  } catch (error) {
-    if (!['OverconstrainedError', 'TypeError'].includes(error.name)) throw error;
-    return navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-  }
+  return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 }
 
 async function startDevicePreview(videoEl, fallbackEl, meterFillEl, statusTextEl) {
