@@ -41,6 +41,18 @@ let previewAudioCtx = null;
 let previewAnalyser = null;
 let previewAnimFrame = null;
 
+async function requestMicrophoneStream() {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (error) {
+    if (!['OverconstrainedError', 'TypeError'].includes(error.name)) throw error;
+    return navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+  }
+}
+
 async function startDevicePreview(videoEl, fallbackEl, meterFillEl, statusTextEl) {
   try {
     if (statusTextEl) statusTextEl.textContent = 'Requesting camera & mic…';
@@ -98,7 +110,9 @@ async function testDevice(kind) {
 
   try {
     if (statusText) statusText.textContent = `Testing ${kind}…`;
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = kind === 'mic'
+      ? await requestMicrophoneStream()
+      : await navigator.mediaDevices.getUserMedia(constraints);
     const oldTracks = (previewStream?.getTracks() || []).filter(track => track.kind === (kind === 'camera' ? 'video' : 'audio'));
     oldTracks.forEach(track => track.stop());
     if (!previewStream) previewStream = new MediaStream();
@@ -337,10 +351,7 @@ async function getMedia() {
     console.warn('Camera permission failed:', error);
   }
   try {
-    streams.push(await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: { echoCancellation: true, noiseSuppression: true }
-    }));
+    streams.push(await requestMicrophoneStream());
   } catch (error) {
     errors.push(error);
     console.warn('Microphone permission failed:', error);
