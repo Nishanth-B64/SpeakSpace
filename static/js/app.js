@@ -321,10 +321,34 @@ function sendCameraStatus(cameraOn) {
 
 async function getMedia() {
   if (state.stream) return state.stream;
-  state.stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: { echoCancellation: true, noiseSuppression: true }
-  });
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera and microphone access is not supported by this browser.');
+  }
+
+  const streams = [];
+  const errors = [];
+  try {
+    streams.push(await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    }));
+  } catch (error) {
+    errors.push(error);
+    console.warn('Camera permission failed:', error);
+  }
+  try {
+    streams.push(await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: { echoCancellation: true, noiseSuppression: true }
+    }));
+  } catch (error) {
+    errors.push(error);
+    console.warn('Microphone permission failed:', error);
+  }
+
+  const tracks = streams.flatMap(stream => stream.getTracks());
+  if (!tracks.length) throw errors[0] || new Error('Could not access camera or microphone.');
+  state.stream = new MediaStream(tracks);
   if ($('localVideo')) {
     $('localVideo').srcObject = state.stream;
     $('localVideo').style.display = 'block';
