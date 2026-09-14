@@ -311,17 +311,51 @@ function clearChatEmptyState() {
   $('chatMessages')?.querySelector('.chat-empty')?.remove();
 }
 
-function addChatMessage(text, sender, own = false) {
+function createChatActions(message, text, own) {
+  const actions = document.createElement('div');
+  actions.className = 'chat-message-actions';
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'chat-action-btn';
+  copyButton.textContent = 'Copy';
+  copyButton.title = 'Copy message';
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Message copied.', '📋');
+    } catch (error) {
+      showToast('Could not copy message.', '⚠️');
+    }
+  });
+  actions.appendChild(copyButton);
+  if (own) {
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'chat-action-btn chat-delete-btn';
+    deleteButton.textContent = 'Delete';
+    deleteButton.title = 'Delete message';
+    deleteButton.addEventListener('click', () => {
+      if (!state.chatChannel || state.chatChannel.readyState !== 'open') return;
+      state.chatChannel.send(JSON.stringify({ type: 'chat-delete', id: message.dataset.messageId }));
+      message.remove();
+    });
+    actions.appendChild(deleteButton);
+  }
+  return actions;
+}
+
+function addChatMessage(text, sender, own = false, messageId = crypto.randomUUID()) {
   const messages = $('chatMessages');
   if (!messages) return;
   clearChatEmptyState();
   const message = document.createElement('div');
   message.className = `chat-message${own ? ' own' : ''}`;
+  message.dataset.messageId = messageId;
   const author = document.createElement('strong');
   author.textContent = own ? 'You' : sender;
   const content = document.createElement('span');
   content.textContent = text;
-  message.append(author, content);
+  message.append(author, content, createChatActions(message, text, own));
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -332,12 +366,13 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function addChatFileMessage(file, sender, own = false) {
+function addChatFileMessage(file, sender, own = false, messageId = crypto.randomUUID()) {
   const messages = $('chatMessages');
   if (!messages) return;
   clearChatEmptyState();
   const message = document.createElement('div');
   message.className = `chat-message${own ? ' own' : ''}`;
+  message.dataset.messageId = messageId;
   const author = document.createElement('strong');
   author.textContent = own ? 'You' : sender;
   const link = document.createElement('a');
@@ -345,7 +380,7 @@ function addChatFileMessage(file, sender, own = false) {
   link.href = URL.createObjectURL(file);
   link.download = file.name;
   link.textContent = `📎 ${file.name} (${formatFileSize(file.size)})`;
-  message.append(author, link);
+  message.append(author, link, createChatActions(message, file.name, own));
   messages.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -402,11 +437,13 @@ function setupChatChannel(channel) {
         const transfer = state.fileTransfers.get(message.id);
         if (!transfer || transfer.received !== transfer.size) return;
         const file = new File(transfer.chunks, transfer.name, { type: transfer.mime });
-        addChatFileMessage(file, transfer.sender);
+        addChatFileMessage(file, transfer.sender, false, message.id);
         state.fileTransfers.delete(message.id);
         state.activeFileTransferId = null;
+      } else if (message.type === 'chat-delete') {
+        document.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`)?.remove();
       } else {
-        addChatMessage(message.text, message.sender || 'Partner');
+        addChatMessage(message.text, message.sender || 'Partner', false, message.id);
       }
     } catch (error) {
       console.warn('Chat message ignored', error);
@@ -418,8 +455,9 @@ function sendChatMessage() {
   const input = $('chatInput');
   const text = input?.value.trim();
   if (!text || !state.chatChannel || state.chatChannel.readyState !== 'open') return;
-  state.chatChannel.send(JSON.stringify({ text, sender: state.name }));
-  addChatMessage(text, state.name, true);
+  const id = crypto.randomUUID();
+  state.chatChannel.send(JSON.stringify({ type: 'chat-text', id, text, sender: state.name }));
+  addChatMessage(text, state.name, true, id);
   input.value = '';
   input.focus();
 }
@@ -447,7 +485,7 @@ async function sendChatFile(file) {
       channel.send(data.slice(offset, offset + CHAT_FILE_CHUNK_SIZE));
     }
     channel.send(JSON.stringify({ type: 'file-end', id }));
-    addChatFileMessage(file, state.name, true);
+    addChatFileMessage(file, state.name, true, id);
   } catch (error) {
     console.warn('File transfer failed:', error);
     showToast('Could not send that file.', '⚠️');
@@ -643,7 +681,12 @@ async function initRoomPage() {
   if ($('nextTopic')) {
     $('nextTopic').addEventListener('click', () => {
       const topics = window.PRACTICE_TOPICS || [];
-      state.topic = (state.topic + 1) % (topics.length || 1);
+      if (state.customTopic) {
+        state.customTopic = '';
+        state.topic = 0;
+      } else {
+        state.topic = (state.topic + 1) % (topics.length || 1);
+      }
       showTopic();
     });
   }

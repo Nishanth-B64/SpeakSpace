@@ -841,6 +841,32 @@ p.lede {
   font-size: 11px;
 }
 
+.chat-message-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.chat-action-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.chat-action-btn:hover {
+  color: var(--emerald-400);
+  text-decoration: underline;
+}
+
+.chat-delete-btn:hover {
+  color: var(--rose-500);
+}
+
 .chat-form {
   display: flex;
   gap: 8px;
