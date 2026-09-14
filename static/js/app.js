@@ -764,6 +764,12 @@ async function initRoomPage() {
     showToast(err.message, '⚠️');
   }
 
+  if ($('recordBtn')) $('recordBtn').addEventListener('click', startBrowserRecording);
+  if ($('stopBtn')) $('stopBtn').addEventListener('click', stopBrowserRecording);
+  if ($('checkTextBtn')) $('checkTextBtn').addEventListener('click', () => {
+    checkGrammar($('manualTranscript')?.value || '');
+  });
+
   // Device permissions should not prevent the peer from joining the room.
   try {
     setCallStatus(state.peers.size ? 'Starting camera & audio…' : 'Waiting for participant (1/2)');
@@ -787,12 +793,6 @@ async function initRoomPage() {
   if ($('hangupBtn')) $('hangupBtn').addEventListener('click', leaveRoom);
   if ($('leaveBtn')) $('leaveBtn').addEventListener('click', leaveRoom);
 
-  // Audio recording buttons
-  if ($('recordBtn')) $('recordBtn').addEventListener('click', startBrowserRecording);
-  if ($('stopBtn')) $('stopBtn').addEventListener('click', stopBrowserRecording);
-  if ($('checkTextBtn')) $('checkTextBtn').addEventListener('click', () => {
-    checkGrammar($('manualTranscript')?.value || '');
-  });
   if ($('chatForm')) $('chatForm').addEventListener('submit', (event) => {
     event.preventDefault();
     sendChatMessage();
