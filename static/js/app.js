@@ -204,7 +204,7 @@ function launchRoom() {
     ? $('customTopic')?.value.trim()
     : $('conversationFocus')?.value;
   const topicParam = selectedTopic ? `&topic=${encodeURIComponent(selectedTopic)}` : '';
-  window.location.href = `/room/${encodeURIComponent(code)}?name=${encodeURIComponent(name)}${topicParam}`;
+  window.location.href = `/room/${encodeURIComponent(code)}?name=${encodeURIComponent(name)}${topicParam}&host=1`;
 }
 
 // --------------------------------------------------------------------------
@@ -228,13 +228,26 @@ function initJoinPage() {
   if ($('testMicBtn')) $('testMicBtn').addEventListener('click', () => testDevice('mic'));
 }
 
-function proceedToRoom() {
+async function proceedToRoom() {
   const name = $('participantName').value.trim() || 'Guest';
   const code = $('joinRoomCode').value.trim().toUpperCase();
   if (code.length < 3) return alert('Please enter a valid room code with at least 3 characters.');
-  localStorage.setItem('speakspace_name', name);
-  cleanupDevicePreview();
-  window.location.href = `/room/${encodeURIComponent(code)}?name=${encodeURIComponent(name)}`;
+  const submitButton = $('submitJoinBtn');
+  const errorEl = $('joinRoomError');
+  if (errorEl) errorEl.textContent = '';
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const room = await api(`/api/rooms/status?room=${encodeURIComponent(code)}`);
+    if (!room.exists) throw new Error('Room not found. Check the room code and try again.');
+    localStorage.setItem('speakspace_name', name);
+    cleanupDevicePreview();
+    window.location.href = `/room/${encodeURIComponent(code)}?name=${encodeURIComponent(name)}`;
+  } catch (error) {
+    if (errorEl) errorEl.textContent = error.message;
+    else showToast(error.message, '⚠️');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -693,9 +706,10 @@ async function initRoomPage() {
     return;
   }
   state.room = roomCode;
+  const urlParams = new URLSearchParams(window.location.search);
+  const isHost = urlParams.get('host') === '1';
 
   // Extract display name
-  const urlParams = new URLSearchParams(window.location.search);
   const nameFromUrl = urlParams.get('name');
   state.customTopic = urlParams.get('topic')?.trim() || '';
   const storedName = localStorage.getItem('speakspace_name');
@@ -737,7 +751,7 @@ async function initRoomPage() {
     const data = await api('/api/rooms/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: state.name, room: state.room, peerId: state.peerId })
+      body: JSON.stringify({ name: state.name, room: state.room, peerId: state.peerId, host: isHost })
     });
     data.peers.forEach(peer => {
       state.peers.set(peer.id, peer);

@@ -132,7 +132,7 @@ def room_status_check():
             clean_expired_rooms()
             room = _rooms.get(code)
             count = len(room["peers"]) if room else 0
-    return jsonify({"room": code, "peerCount": count, "maxMembers": MAX_ROOM_MEMBERS, "available": count < MAX_ROOM_MEMBERS})
+    return jsonify({"room": code, "peerCount": count, "exists": count > 0, "maxMembers": MAX_ROOM_MEMBERS, "available": count < MAX_ROOM_MEMBERS})
 
 
 @app.post("/api/rooms/join")
@@ -141,6 +141,7 @@ def join_room():
     code = room_code(str(data.get("room", "")))
     peer_id = str(data.get("peerId", ""))[:80]
     name = str(data.get("name", "Guest"))[:30].strip() or "Guest"
+    is_host = data.get("host") is True
     if len(code) < 3 or not peer_id:
         return error("Enter a room code of at least 3 characters.")
     client = supabase_client()
@@ -149,6 +150,8 @@ def join_room():
         rows = table.select("id,peer_id,data").eq("room_code", code).execute().data or []
         peer_rows = [row for row in rows if row.get("data", {}).get("type") == "peer"]
         existing = next((row for row in peer_rows if row["peer_id"] == peer_id), None)
+        if not peer_rows and not is_host:
+            return error("Room not found. Check the room code and try again.", 404)
         if not existing and len(peer_rows) >= MAX_ROOM_MEMBERS:
             return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
         peer_data = {"type": "peer", "name": name, "seen": time.time()}
@@ -161,6 +164,8 @@ def join_room():
     else:
         with _rooms_lock:
             clean_expired_rooms()
+            if code not in _rooms and not is_host:
+                return error("Room not found. Check the room code and try again.", 404)
             peers = _rooms[code]["peers"]
             if peer_id not in peers and len(peers) >= MAX_ROOM_MEMBERS:
                 return error(f"This practice room already has {MAX_ROOM_MEMBERS} people.", 409)
