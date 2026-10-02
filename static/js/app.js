@@ -282,7 +282,11 @@ const state = {
   ,customTopic: ''
 };
 
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const rtcConfig = {
+  iceServers: Array.isArray(window.RTC_ICE_SERVERS) && window.RTC_ICE_SERVERS.length
+    ? window.RTC_ICE_SERVERS
+    : [{ urls: 'stun:stun.l.google.com:19302' }]
+};
 const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const CHAT_FILE_CHUNK_SIZE = 16 * 1024;
 

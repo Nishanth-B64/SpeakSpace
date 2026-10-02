@@ -49,6 +49,31 @@ def supabase_client():
 def supabase_room_table(client):
     return client.table(os.getenv("SUPABASE_ROOM_TABLE", "rooms"))
 
+
+def webrtc_ice_servers() -> list[dict[str, object]]:
+    default_servers: list[dict[str, object]] = [
+        {"urls": "stun:stun.l.google.com:19302"}
+    ]
+    configured_servers = os.getenv("WEBRTC_ICE_SERVERS", "").strip()
+    if not configured_servers:
+        return default_servers
+
+    try:
+        servers = json.loads(configured_servers)
+    except json.JSONDecodeError:
+        app.logger.warning("WEBRTC_ICE_SERVERS is not valid JSON; using the default STUN server")
+        return default_servers
+
+    if not isinstance(servers, list) or not servers or any(
+        not isinstance(server, dict)
+        or not isinstance(server.get("urls"), (str, list))
+        or (isinstance(server.get("urls"), list) and not all(isinstance(url, str) for url in server["urls"]))
+        for server in servers
+    ):
+        app.logger.warning("WEBRTC_ICE_SERVERS has an invalid format; using the default STUN server")
+        return default_servers
+    return servers
+
 TOPICS = [
     {"title": "Weekend plans", "prompt": "What would you like to do this weekend, and why?"},
     {"title": "A memorable meal", "prompt": "Describe a meal you enjoyed and who you shared it with."},
@@ -102,7 +127,7 @@ def join_room_page():
 @app.get("/room/<room_code_val>")
 def room_page(room_code_val: str):
     code = room_code(room_code_val)
-    return render_template("room.html", room_code=code, topics=TOPICS)
+    return render_template("room.html", room_code=code, topics=TOPICS, ice_servers=webrtc_ice_servers())
 
 
 @app.get("/room")
@@ -111,7 +136,7 @@ def room_query():
     if not code:
         from flask import redirect, url_for
         return redirect(url_for("join_room_page"))
-    return render_template("room.html", room_code=code, topics=TOPICS)
+    return render_template("room.html", room_code=code, topics=TOPICS, ice_servers=webrtc_ice_servers())
 
 
 @app.get("/api/topics")

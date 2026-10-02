@@ -200,6 +200,7 @@
     <script>
       window.ROOM_CODE = "{{ room_code }}";
       window.PRACTICE_TOPICS = {{ topics|tojson }};
+      window.RTC_ICE_SERVERS = {{ ice_servers|tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script>
