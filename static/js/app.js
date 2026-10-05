@@ -272,6 +272,7 @@ const state = {
   screenTrack: null,
   stream: null,
   polling: null,
+  pollInFlight: false,
   recording: false,
   recorderNode: null,
   audioContext: null,
@@ -575,13 +576,22 @@ function makePeerConnection() {
       signal(peer, { type: 'candidate', candidate: candidate.toJSON() });
     }
   };
-  pc.ontrack = ({ streams }) => {
+  pc.ontrack = ({ streams, track }) => {
     const video = document.querySelector(`#remote-video-${CSS.escape(peer.id)}`);
     if (video) {
-      video.srcObject = streams[0];
+      if (streams[0]) {
+        video.srcObject = streams[0];
+      } else {
+        pc._remoteStream ||= new MediaStream();
+        if (!pc._remoteStream.getTracks().some(remoteTrack => remoteTrack.id === track.id)) {
+          pc._remoteStream.addTrack(track);
+        }
+        video.srcObject = pc._remoteStream;
+      }
       video.style.display = 'block';
+      video.play().catch(error => console.warn('Remote video playback was blocked:', error));
     }
-    setRemoteCameraState(peer.id, true);
+    if (track.kind === 'video') setRemoteCameraState(peer.id, true);
     updateCallStatus();
   };
   pc.onconnectionstatechange = () => {
@@ -703,7 +713,8 @@ function shouldCreateOffer(peer) {
 }
 
 async function poll() {
-  if (!state.room) return;
+  if (!state.room || state.pollInFlight) return;
+  state.pollInFlight = true;
   try {
     const data = await api(`/api/rooms/poll?room=${encodeURIComponent(state.room)}&peerId=${encodeURIComponent(state.peerId)}`);
     const currentPeerIds = new Set(data.peers.map(peer => peer.id));
@@ -723,6 +734,8 @@ async function poll() {
     }
   } catch (err) {
     console.warn('Poll error:', err.message);
+  } finally {
+    state.pollInFlight = false;
   }
 }
 
@@ -811,10 +824,6 @@ async function initRoomPage() {
   }
   setCallStatus(state.peers.size ? 'Connecting to participant…' : 'Waiting for participant (1/2)');
   startPolling();
-  for (const peer of state.peers.values()) {
-    makePeerConnection(peer)._peerId = peer.id;
-    if (shouldCreateOffer(peer)) await offerPeer(peer);
-  }
   showToast(`Joined room ${state.room}`, '🎉');
 
   // Camera & Mic toggles
