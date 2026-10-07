@@ -1,4 +1,4 @@
-# Language Practice Room
+# Xynoz Language Practice
 
 A two-person English practice room: direct browser-to-browser video/audio through WebRTC, a Flask signaling and coaching API, WAV speech transcription with Python `SpeechRecognition`, and Gemini grammar feedback. Your Gemini key never reaches the browser.
 

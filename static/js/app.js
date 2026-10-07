@@ -1,6 +1,16 @@
-/* SpeakSpace - Real-time WebRTC, Device Previews, Speech-to-Text & SpeakSpace AI Coach */
+/* Xynoz - Real-time WebRTC, Device Previews, Speech-to-Text & AI Coach */
 
 const $ = (id) => document.getElementById(id);
+const DISPLAY_NAME_STORAGE_KEY = 'xynoz_name';
+const LEGACY_DISPLAY_NAME_STORAGE_KEY = 'speakspace_name';
+
+function getSavedDisplayName() {
+  const savedName = localStorage.getItem(DISPLAY_NAME_STORAGE_KEY);
+  if (savedName) return savedName;
+  const legacyName = localStorage.getItem(LEGACY_DISPLAY_NAME_STORAGE_KEY) || '';
+  if (legacyName) localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, legacyName);
+  return legacyName;
+}
 
 // Toast notification helper
 function showToast(message, icon = '✦') {
@@ -168,7 +178,7 @@ function initCreatePage() {
   const customTopic = $('customTopic');
 
   // Prepopulate saved display name
-  const savedName = localStorage.getItem('speakspace_name') || '';
+  const savedName = getSavedDisplayName();
   if (hostNameInput) hostNameInput.value = savedName;
 
   // Generate initial room code
@@ -204,7 +214,7 @@ function launchRoom() {
   const name = $('hostName').value.trim() || 'Host';
   const code = $('roomCode').value.trim().toUpperCase();
   if (code.length < 3) return alert('Room code must be at least 3 characters.');
-  localStorage.setItem('speakspace_name', name);
+  localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, name);
   cleanupDevicePreview();
   const selectedTopic = $('conversationFocus')?.value === 'custom'
     ? $('customTopic')?.value.trim()
@@ -220,7 +230,7 @@ function initJoinPage() {
   const nameInput = $('participantName');
   const codeInput = $('joinRoomCode');
 
-  const savedName = localStorage.getItem('speakspace_name') || '';
+  const savedName = getSavedDisplayName();
   if (nameInput && !nameInput.value) nameInput.value = savedName;
 
   // Auto-uppercase room code as user types
@@ -246,7 +256,7 @@ async function proceedToRoom() {
     const room = await api(`/api/rooms/status?room=${encodeURIComponent(code)}`);
     const roomExists = room.exists === true || Number(room.peerCount) > 0;
     if (!roomExists) throw new Error('Room not found. Check the room code and try again.');
-    localStorage.setItem('speakspace_name', name);
+    localStorage.setItem(DISPLAY_NAME_STORAGE_KEY, name);
     cleanupDevicePreview();
     window.location.href = `/room/${encodeURIComponent(code)}?name=${encodeURIComponent(name)}`;
   } catch (error) {
@@ -758,7 +768,7 @@ async function initRoomPage() {
   // Extract display name
   const nameFromUrl = urlParams.get('name');
   state.customTopic = urlParams.get('topic')?.trim() || '';
-  const storedName = localStorage.getItem('speakspace_name');
+  const storedName = getSavedDisplayName();
   state.name = (nameFromUrl || storedName || 'You').trim();
   if ($('localUserLabel')) $('localUserLabel').textContent = state.name;
 
@@ -1077,7 +1087,7 @@ async function useTranscript(transcript, source = '') {
 }
 
 // --------------------------------------------------------------------------
-// SpeakSpace AI Grammar & Feedback
+// Xynoz AI Grammar & Feedback
 // --------------------------------------------------------------------------
 function escapeHtml(value) {
   const el = document.createElement('div');
