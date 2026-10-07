@@ -26,8 +26,8 @@ load_dotenv(ENV_PATH, override=True)
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024  # 12 MB audio limit
 
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
-FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-flash-lite-latest")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+FALLBACK_MODEL_NAME = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
 SIGNAL_TTL_SECONDS = 15 * 60
 MAX_ROOM_MEMBERS = 2
 _rooms: dict[str, dict[str, object]] = defaultdict(lambda: {"peers": {}, "signals": []})
@@ -348,9 +348,14 @@ Keep corrections natural and preserve the learner's meaning. Use simple, encoura
             status_code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
             if status_code is None and hasattr(exc, "last_attempt"):
                 status_code = getattr(exc.last_attempt.exception(), "status_code", None)
-            if status_code not in (429, "RESOURCE_EXHAUSTED") or model_name == FALLBACK_MODEL_NAME:
+            if status_code not in (429, 404, "RESOURCE_EXHAUSTED", "NOT_FOUND") or model_name == FALLBACK_MODEL_NAME:
                 raise
-            app.logger.warning("Gemini model quota exhausted; retrying with fallback model %s", FALLBACK_MODEL_NAME)
+            app.logger.warning(
+                "Gemini model %s returned status %s; retrying with fallback model %s",
+                model_name,
+                status_code,
+                FALLBACK_MODEL_NAME,
+            )
             response = client.models.generate_content(model=FALLBACK_MODEL_NAME, contents=prompt, config=config)
         result = json.loads(response.text)
         if not isinstance(result, dict) or "corrected" not in result:
