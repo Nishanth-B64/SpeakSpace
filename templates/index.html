@@ -61,25 +61,6 @@
           </div>
         </section>
 
-        <section class="glass-card" style="margin-bottom: 40px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
-            <div>
-              <span class="eyebrow">TODAY'S DISCUSSION PROMPTS</span>
-              <h2>Conversation Topics Available in Rooms</h2>
-            </div>
-            <span class="eyebrow-pill" style="color: var(--emerald-400);">Curated Prompts</span>
-          </div>
-
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
-            {% for topic in topics %}
-            <div style="background: rgba(8, 13, 20, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 18px;">
-              <span style="font-family: var(--font-mono); font-size: 11px; color: var(--emerald-400); font-weight: 700;">PROMPT 0{{ loop.index }}</span>
-              <h3 style="font-size: 16px; margin: 6px 0; color: #fff;">{{ topic.title }}</h3>
-              <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.45;">"{{ topic.prompt }}"</p>
-            </div>
-            {% endfor %}
-          </div>
-        </section>
       </main>
 
       <footer>
